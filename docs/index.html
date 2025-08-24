@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PDTP Full-Text Search</title>
+    
+    <style>
+        .pagination-controls {
+            margin-top: 1em;
+            font-size: 1.2em;
+        }
+        #perPage {
+            font-size: 1.2em;
+        }
+        .page-link {
+            margin: 0 0.5em;
+            cursor: pointer;
+            font-size: 1.5em;
+        }
+        .page-link.active {
+            font-weight: bold;
+            text-decoration: none;
+        }
+        #results-container {
+            font-size: 1.2em;
+        }
+        #search-input {
+            width: 400px;
+            font-size: 1.2em;
+        }
+        #search-summary {
+            font-size: 1.2em;
+            margin-top: 0.5em;
+        }
+        #transliteration-scheme {
+            font-size: 1.2em;
+        }
+        #show-all-schemes + label, .pagination-controls label, p strong {
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <h1>PDTP Full-Text Search</h1>
+    <p>
+        <a href="https://github.com/tylergneill/prakrit_texts_search">Repo on GitHub</a>
+        &nbsp;&nbsp; | &nbsp;&nbsp;
+        <a href="https://github.com/aso2101/prakrit_texts">Source repo on GitHub</a>
+        &nbsp;&nbsp; | &nbsp;&nbsp;
+        <a href="./tei_structure.html">File Overview</a>
+    </p>
+    <div id="search-container">
+        <input type="search" id="search-input" placeholder="Search...">
+        <select id="transliteration-scheme">
+            <option value="iast">IAST</option>
+            <option value="devanagari">Devanagari</option>
+            <option value="hk">Harvard-Kyoto</option>
+            <option value="itrans">ITRANS</option>
+            <option value="slp1">SLP1</option>
+            <option value="velthuis">Velthuis</option>
+        </select>
+        <input type="checkbox" id="show-all-schemes"> <label for="show-all-schemes">Show all schemes</label>
+    </div>
+    <div id="search-summary"></div>
+    <div id="results-container"></div>
+    <div class="pagination-controls">
+        <label for="perPage">Results per page:</label>
+        <select id="perPage">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+        </select>
+    </div>
+    <div id="pagination-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@indic-transliteration/sanscript/sanscript.min.js"></script>
+    <script>
+        let pagefind;
+        let currentResults = [];
+        let currentPage = 1;
+        let resultsPerPage = 25;
+        
+
+        const resultsContainer = document.getElementById('results-container');
+        const paginationContainer = document.getElementById('pagination-container');
+        const searchInput = document.getElementById('search-input');
+        const transliterationScheme = document.getElementById('transliteration-scheme');
+        const perPageSelect = document.getElementById('perPage');
+        const showAllSchemesCheckbox = document.getElementById('show-all-schemes');
+
+        const allSchemes = {
+            "Roman Schemes": ["cyrillic", "hk", "iast", "iso", "itrans", "itrans_dravidian", "slp1", "velthuis", "wx"],
+            "Brahmic Schemes": ["assamese", "balinese", "bengali", "devanagari", "gujarati", "javanese", "kannada", "khmer", "lao_pali", "malayalam", "mon", "oriya", "ranjana", "sinhala", "tamil"]
+        };
+
+        /*
+        Non-working Roman Schemes:
+        kolkata
+        */
+
+        /*
+        Non-working Brahmic Schemes:
+        ahom, avestan, bhaisuki, brahmi, brahmi_tamil, burmese,
+        chakma, cham, dogra, gondi_gunjala, gondi_masaram, grantha, grantha_pandya,
+        gurmukhi, khamti_shan, kharoshti, khom_thai,
+        khudawadi, lao, lepcha, limbu, mahajani, manipuri, marchen,
+        modi, mon, mro, multani, newa, ol_chiki, persian_old, phags_pa,
+        rejang, rohingya, sanskritocr, shan, sharada, siddham, sora_sompeng,
+        sundanese, syloti_nagari, tagalog, tagbanwa, tai_laing, takri,
+        tamil_extended, tamil_superscripted, telugu, thai, tibetan, tirhuta_maithili, urdu, vattelutu,
+        wancho, warang_citi, zanbazar_square
+        */
+
+        const defaultSchemes = ["iast", "devanagari", "hk", "itrans", "slp1", "velthuis"];
+
+        const schemeDisplayNames = {
+            "iast": "IAST",
+            "devanagari": "Devanāgarī",
+            "hk": "HK",
+            "itrans": "ITRANS",
+            "slp1": "SLP1",
+            "velthuis": "Velthuis"
+        };
+
+        const populateSchemesDropdown = (showAll) => {
+            transliterationScheme.innerHTML = ''; // Clear existing options
+
+            if (showAll) {
+                for (const group in allSchemes) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = group;
+                    allSchemes[group].forEach(scheme => {
+                        const option = document.createElement('option');
+                        option.value = scheme;
+                        option.innerText = scheme.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()); // Capitalize and replace underscores
+                        optgroup.appendChild(option);
+                    });
+                    transliterationScheme.appendChild(optgroup);
+                }
+            } else {
+                defaultSchemes.forEach(scheme => {
+                    const option = document.createElement('option');
+                    option.value = scheme;
+                    option.innerText = schemeDisplayNames[scheme];
+                    transliterationScheme.appendChild(option);
+                });
+            }
+        };
+
+        const renderResults = () => {
+            resultsContainer.innerHTML = '';
+            const start = (currentPage - 1) * resultsPerPage;
+            const end = start + resultsPerPage;
+            const paginatedResults = currentResults.slice(start, end);
+
+            paginatedResults.forEach(async (result) => {
+                const data = await result.data();
+                
+                const resultElement = document.createElement('div');
+                resultElement.innerHTML = `<h3><a href="${data.url}">${data.meta.title}</a></h3><p>${data.excerpt}</p>`;
+                resultsContainer.appendChild(resultElement);
+            });
+        };
+
+        const renderPagination = () => {
+            paginationContainer.innerHTML = '';
+            const totalPages = Math.ceil(currentResults.length / resultsPerPage);
+
+            if (totalPages <= 1) return; // No pagination needed for 1 or fewer pages
+
+            const createPageLink = (page, text, className = '') => {
+                const pageLink = document.createElement('a');
+                pageLink.href = '#';
+                pageLink.innerText = text;
+                pageLink.classList.add('page-link');
+                if (className) pageLink.classList.add(className);
+                pageLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    currentPage = page;
+                    renderResults();
+                    renderPagination();
+                });
+                return pageLink;
+            };
+
+            // Previous button
+            if (currentPage > 1) {
+                paginationContainer.appendChild(createPageLink(1, '«'));
+                paginationContainer.appendChild(createPageLink(currentPage - 1, '<'));
+            }
+
+            // Page numbers and ellipsis
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                paginationContainer.appendChild(createPageLink(1, '1'));
+                if (startPage > 2) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.innerText = '...';
+                    paginationContainer.appendChild(ellipsis);
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const pageLink = createPageLink(i, i);
+                if (i === currentPage) {
+                    pageLink.classList.add('active');
+                }
+                paginationContainer.appendChild(pageLink);
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.innerText = '...';
+                    paginationContainer.appendChild(ellipsis);
+                }
+                paginationContainer.appendChild(createPageLink(totalPages, totalPages));
+            }
+
+            // Next button
+            if (currentPage < totalPages) {
+                paginationContainer.appendChild(createPageLink(currentPage + 1, '>'));
+                paginationContainer.appendChild(createPageLink(totalPages, '»'));
+            }
+        };
+
+        const performSearch = async () => {
+            const term = searchInput.value;
+            if (term.length > 2) {
+                const scheme = document.getElementById('transliteration-scheme').value;
+                const normalizedTerm = Sanscript.t(term, scheme, 'iast');
+                const search = await pagefind.search(normalizedTerm);
+                currentResults = search.results;
+                currentPage = 1;
+                renderResults();
+                renderPagination();
+
+                const totalFiles = search.results.length;
+                document.getElementById('search-summary').innerText = `${totalFiles} files found.`;
+            } else {
+                currentResults = [];
+                resultsContainer.innerHTML = '';
+                paginationContainer.innerHTML = '';
+                document.getElementById('search-summary').innerText = '';
+            }
+        };
+
+        window.addEventListener('DOMContentLoaded', async (event) => {
+            
+            pagefind = await import("./pagefind/pagefind.js");
+            await pagefind.options({ bundlePath: "./pagefind/" });
+            await pagefind.init();
+
+            searchInput.addEventListener('input', performSearch);
+
+            perPageSelect.addEventListener('change', (e) => {
+                resultsPerPage = parseInt(e.target.value, 10);
+                currentPage = 1;
+                renderResults();
+                renderPagination();
+            });
+
+            showAllSchemesCheckbox.addEventListener('change', (e) => {
+                populateSchemesDropdown(e.target.checked);
+            });
+
+            // Initial population of the dropdown
+            populateSchemesDropdown(false);
+        });
+    </script>
+</body>
+</html>
