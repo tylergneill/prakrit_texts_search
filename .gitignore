@@ -55,7 +55,7 @@ venv*/
 .DS_Store
 
 /pagefind
-!html/pagefind/
+!docs/pagefind/
 *.tar.gz
 
 # Node.js
