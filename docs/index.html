@@ -42,7 +42,11 @@
 </head>
 <body>
     <h1>PDTP Full-Text Search</h1>
-    <p><a href="https://github.com/aso2101/prakrit_texts">Source repo on GitHub</a></p>
+    <p>
+        <a href="https://github.com/aso2101/prakrit_texts">Source repo on GitHub</a>
+        &nbsp;&nbsp; | &nbsp;&nbsp;
+        <a href="./tei_structure.html">File Overview</a>
+    </p>
     <div id="search-container">
         <input type="search" id="search-input" placeholder="Search...">
         <select id="transliteration-scheme">
@@ -116,8 +120,6 @@
             "slp1": "SLP1",
             "velthuis": "Velthuis"
         };
-
-        
 
         const populateSchemesDropdown = (showAll) => {
             transliterationScheme.innerHTML = ''; // Clear existing options
